@@ -1,0 +1,84 @@
+name: Auto Generate README.md
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+  workflow_dispatch:
+
+jobs:
+  build-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Tree Utility
+        run: sudo apt-get update && sudo apt-get install -y tree
+
+      - name: Generate README Content
+        run: |
+          cat << 'EOF' > README.md
+          # 🎵 MUSIC RECOGNITION & RIGHTS INSPECTION PLATFORM
+
+          > Hệ thống AI nhận diện âm nhạc đa tầng (Hybrid Cascade) kết hợp Audio Fingerprinting và Deep Retrieval 768-dim tra cứu bản quyền tự động.
+
+          ---
+
+          ## 📌 Tổng quan Kiến trúc
+
+          - **Tầng 1 (Exact Match):** Chromaprint Audio Fingerprinting (Bitwise Hamming Distance).
+          - **Tầng 2 (Deep Retrieval):** MERT-v1-95M Feature Extractor + FAISS Vector Search (Cosine Similarity).
+          - **Business Engine:** Tra cứu bản quyền & cấp phép (Public Domain, Creative Commons, Revenue Share).
+          - **RESTful API:** FastAPI + Uvicorn Server.
+
+          ---
+
+          ## 📂 Cấu trúc Dự án
+
+          ```text
+          EOF
+          
+          tree -I '.git|.venv|__pycache__|*.pyc|temp_uploads|.pytest_cache' >> README.md
+          
+          cat << 'EOF' >> README.md
+          ```
+
+          ---
+
+          ## 🚀 Hướng dẫn Cài đặt & Khởi chạy
+
+          ### 1. Khởi tạo môi trường
+          ```bash
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          ```
+
+          ### 2. Khởi chạy FastAPI Server
+          ```bash
+          uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+          ```
+          TRUY CẬP SWAGGER UI: `http://localhost:8000/docs`
+
+          ### 3. Chạy Kiểm thử (Pytest)
+          ```bash
+          python -m pytest tests/ -W ignore::DeprecationWarning
+          ```
+
+          ---
+          *Tự động cập nhật bởi GitHub Action Workflow.*
+          EOF
+
+      - name: Commit and Push README
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: tự động cập nhật README.md và cấu trúc thư mục [skip ci]"
+          file_pattern: 'README.md'
