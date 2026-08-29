@@ -1,0 +1,2 @@
+query_id,recording_id,composition_id,transformation,snr,pitch_shift,tempo_factor,codec,bitrate,segment_start,duration,expected_match_type
+c71995d7-60b2-4b50-898c-f1fd10beafbb,f23c562b-ea9b-45c9-ae6f-79ffadf990c0,,crop_15s,15.0,0.0,1.0,mp3,320,0.0,15.0,EXACT_MATCH

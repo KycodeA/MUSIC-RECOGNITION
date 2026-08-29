@@ -1,15 +1,34 @@
 import os
+import re
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, inspect
 
-# 1. Chuỗi kết nối PostgreSQL (User, Password, Host, Port, DB Name)
 DATABASE_URL = "postgresql://postgres:postgrespassword@localhost:5432/music_rights_ai"
 engine = create_engine(DATABASE_URL)
+
+def clean_and_filter_df(df: pd.DataFrame, table_name: str, engine) -> pd.DataFrame:
+    """
+    1. Loại bỏ các đuôi biến dạng như _m999, _m3274 ở cuối tên cột (ví dụ: duration_m999 -> duration)
+    2. Chỉ lọc lấy đúng các cột có khai báo trong Bảng CSDL PostgreSQL
+    """
+    new_columns = {}
+    for col in df.columns:
+        # Regex xóa _m theo sau bởi các chữ số ở cuối chuỗi
+        clean_col = re.sub(r'_m\d+$', '', str(col)).strip()
+        new_columns[col] = clean_col
+    df = df.rename(columns=new_columns)
+
+    # Lấy danh sách cột thực tế từ Schema DB
+    inspector = inspect(engine)
+    db_columns = [c['name'] for c in inspector.get_columns(table_name)]
+
+    # Giữ lại cột hợp lệ
+    valid_cols = [c for c in df.columns if c in db_columns]
+    return df[valid_cols]
 
 def init_database():
     print("=== BẮT ĐẦU TẠO BẢNG & NẠP DỮ LIỆU VÀO POSTGRESQL ===")
     
-    # 2. Định nghĩa Schema cấu trúc các bảng bắt buộc theo Đề cương dự án
     create_tables_sql = """
     CREATE TABLE IF NOT EXISTS compositions (
         composition_id UUID PRIMARY KEY,
@@ -63,32 +82,96 @@ def init_database():
         duration FLOAT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+    
+    CREATE TABLE IF NOT EXISTS embeddings (
+        embedding_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        recording_id UUID REFERENCES recordings(recording_id),
+        segment_start FLOAT,
+        segment_end FLOAT,
+        model VARCHAR(50) DEFAULT 'MERT',
+        model_version VARCHAR(50) DEFAULT 'MERT-v1-95M',
+        dimension INTEGER DEFAULT 768,
+        vector TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS test_queries (
+        query_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        recording_id UUID REFERENCES recordings(recording_id),
+        composition_id UUID REFERENCES compositions(composition_id),
+        transformation VARCHAR(100),
+        snr FLOAT,
+        pitch_shift FLOAT,
+        tempo_factor FLOAT,
+        codec VARCHAR(20),
+        bitrate INTEGER,
+        segment_start FLOAT,
+        duration FLOAT,
+        expected_match_type VARCHAR(50)
+    );
+
+    CREATE TABLE IF NOT EXISTS analysis_results (
+        job_id UUID PRIMARY KEY,
+        query_id UUID,
+        recording_candidate UUID,
+        composition_candidate UUID,
+        fingerprint_score FLOAT,
+        embedding_score FLOAT,
+        cover_score FLOAT,
+        match_type VARCHAR(50),
+        risk_level VARCHAR(50),
+        confidence FLOAT,
+        decision_reason TEXT,
+        latency_ms FLOAT,
+        model_version VARCHAR(50),
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
     """
 
     with engine.connect() as conn:
         conn.execute(text(create_tables_sql))
         conn.commit()
-    print("-> Da khoi tao xong khung cac bang (Schema)!")
+    print("-> Đã khởi tạo xong khung 7 bảng (Schema) chuẩn Đề cương!")
 
-    # 3. Import các file CSV dữ liệu vào CSDL
-    data_dir = "data/processed" # Đường dẫn chứa các file master CSV của bạn trên Codespace
+    data_dir = "data/processed"
     
     files_to_import = [
         ("compositions_master.csv", "compositions"),
         ("metadata_master.csv", "recordings"),
         ("rights_master.csv", "rights"),
-        ("fingerprints_master.csv", "fingerprints")
+        ("fingerprints_master.csv", "fingerprints"),
+        ("embeddings_master.csv", "embeddings"),
+        ("test_queries_master.csv", "test_queries")
     ]
 
-    for csv_file, table_name in files_to_import:
-        file_path = os.path.join(data_dir, csv_file)
-        if os.path.exists(file_path):
-            df = pd.read_csv(file_path)
-            # Nạp dữ liệu vào bảng tương ứng trong Postgres
-            df.to_sql(table_name, engine, if_exists='append', index=False, method='multi')
-            print(f"-> Nap thanh cong {len(df)} ban ghi vao bang '{table_name}' tu {csv_file}")
-        else:
-            print(f"-> Canh bao: Khong tim thay file {file_path}, bo qua napping bang '{table_name}'")
+    with engine.connect() as conn:
+        # Tắt kiểm tra khóa ngoại để nạp mượt mà
+        conn.execute(text("SET session_replication_role = 'replica';"))
+        
+        for csv_file, table_name in files_to_import:
+            file_path = os.path.join(data_dir, csv_file)
+            if os.path.exists(file_path):
+                try:
+                    df = pd.read_csv(file_path)
+                    
+                    # Dọn dẹp tên cột và lọc cột chuẩn
+                    df = clean_and_filter_df(df, table_name, engine)
+                    
+                    # Xóa dữ liệu cũ
+                    conn.execute(text(f"TRUNCATE TABLE {table_name} CASCADE;"))
+                    conn.commit()
+                    
+                    # Nạp dữ liệu mới
+                    df.to_sql(table_name, engine, if_exists='append', index=False, method='multi', chunksize=1000)
+                    print(f"-> Nạp thành công {len(df)} bản ghi vào bảng '{table_name}' từ {csv_file}")
+                except Exception as e:
+                    print(f"❌ Lỗi khi nạp file {csv_file} vào bảng '{table_name}': {e}")
+            else:
+                print(f"-> Bỏ qua nạp '{table_name}': Chưa tìm thấy file {file_path}")
+                
+        # Khôi phục lại kiểm tra khóa ngoại
+        conn.execute(text("SET session_replication_role = 'origin';"))
+        conn.commit()
 
     print("\n=== HOÀN THÀNH QUÁ TRÌNH TẠO VÀ NẠP CSDL ===")
 
