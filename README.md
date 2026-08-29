@@ -17,11 +17,14 @@
 
 ```text
 .
+├── Dockerfile
 ├── README.md
 ├── backend
 │   ├── main.py
 │   └── services
+│       ├── audio_service.py
 │       ├── cascade_service.py
+│       ├── decision_service.py
 │       ├── embedding_service.py
 │       ├── fingerprint_service.py
 │       ├── retrieval_service.py
@@ -29,13 +32,18 @@
 ├── data
 │   └── processed
 │       ├── compositions_master.csv
+│       ├── embeddings_master.csv
 │       ├── fingerprints_master.csv
 │       ├── metadata_master.csv
-│       └── rights_master.csv
+│       ├── rights_master.csv
+│       └── test_queries_master.csv
 ├── docker-compose.yml
 ├── init_db.py
 ├── scripts
-│   └── evaluate_benchmark.py
+│   ├── build_full_mert_index.py
+│   ├── evaluate_benchmark.py
+│   ├── generate_missing_csvs.py
+│   └── generate_test_queries.py
 ├── test.mp3
 ├── test_fingerprint.py
 └── tests
@@ -46,7 +54,7 @@
     ├── test_retrieval_service.py
     └── test_rights_service.py
 
-7 directories, 22 files
+7 directories, 30 files
 ```
 
 ---
