@@ -39,12 +39,17 @@
 │       └── test_queries_master.csv
 ├── docker-compose.yml
 ├── init_db.py
+├── requirements.txt
 ├── scripts
+│   ├── add_test_track.py
 │   ├── build_full_mert_index.py
 │   ├── evaluate_benchmark.py
 │   ├── generate_missing_csvs.py
-│   └── generate_test_queries.py
+│   ├── generate_test_queries.py
+│   └── sync_data.py
 ├── test.mp3
+├── test_audio
+│   └── bai_hat_test.mp3
 ├── test_fingerprint.py
 └── tests
     ├── test_api.py
@@ -54,7 +59,7 @@
     ├── test_retrieval_service.py
     └── test_rights_service.py
 
-7 directories, 30 files
+8 directories, 34 files
 ```
 
 ---
