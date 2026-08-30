@@ -56,10 +56,11 @@
     ├── test_cascade_service.py
     ├── test_fingerprint_service.py
     ├── test_mert_embedding.py
+    ├── test_recognition.py
     ├── test_retrieval_service.py
     └── test_rights_service.py
 
-8 directories, 34 files
+8 directories, 35 files
 ```
 
 ---
