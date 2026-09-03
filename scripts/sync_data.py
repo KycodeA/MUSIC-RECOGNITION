@@ -9,6 +9,7 @@ import pandas as pd
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 DATA_DIR = "data/processed"
+COMPOSITIONS_CSV = os.path.join(DATA_DIR, "compositions_master.csv")
 METADATA_CSV = os.path.join(DATA_DIR, "metadata_master.csv")
 FINGERPRINTS_CSV = os.path.join(DATA_DIR, "fingerprints_master.csv")
 EMBEDDINGS_CSV = os.path.join(DATA_DIR, "embeddings_master.csv")
@@ -16,7 +17,6 @@ RIGHTS_CSV = os.path.join(DATA_DIR, "rights_master.csv")
 
 def get_chromaprint(audio_path):
     if not os.path.exists(audio_path):
-        # Thử tìm file theo đường dẫn tương đối từ thư mục gốc
         alt_path = os.path.join(os.getcwd(), audio_path)
         if os.path.exists(alt_path):
             audio_path = alt_path
@@ -31,8 +31,7 @@ def get_chromaprint(audio_path):
             text=True, 
             check=True
         )
-        duration = 0.0
-        fingerprint = ""
+        duration, fingerprint = 0.0, ""
         for line in result.stdout.splitlines():
             if line.startswith("DURATION="):
                 duration = float(line.split("=")[1])
@@ -45,80 +44,78 @@ def get_chromaprint(audio_path):
     except Exception as e:
         print(f"⚠️ Lỗi fpcalc với file {audio_path}: {e}")
         return None, 0.0
+
 def sync_all_master_data():
-    print("=== BẮT ĐẦU ĐỒNG BỘ DỮ LIỆU BẢN QUYỀN & FINGERPRINT ===")
+    print("=== BẮT ĐẦU LÀM SẠCH VÀ ĐỒNG BỘ DỮ LIỆU CỐT LÕI ===")
     
-    if not os.path.exists(METADATA_CSV):
-        print(f"❌ Không tìm thấy file {METADATA_CSV}")
+    if not os.path.exists(METADATA_CSV) or not os.path.exists(COMPOSITIONS_CSV):
+        print(f"❌ Không tìm thấy file metadata hoặc compositions trong {DATA_DIR}")
         return
 
+    # 1. Đọc dữ liệu
+    df_comp = pd.read_csv(COMPOSITIONS_CSV)
     df_meta = pd.read_csv(METADATA_CSV)
-    print(f"📖 Tìm thấy {len(df_meta)} bản ghi trong metadata_master.csv")
+    
+    # 2. Lọc metadata theo compositions_master (Loại bỏ composition_id mồ côi)
+    valid_comp_ids = set(df_comp['composition_id'].dropna().astype(str))
+    df_meta_clean = df_meta[df_meta['composition_id'].astype(str).isin(valid_comp_ids)].copy()
+    valid_rec_ids = set(df_meta_clean['recording_id'].dropna().astype(str))
+    
+    print(f"📖 Đã dọn dẹp metadata_master.csv: Giữ lại {len(df_meta_clean)}/{len(df_meta)} bản ghi hợp lệ.")
 
-    fingerprints = []
-    embeddings = []
-    rights = []
+    # 3. Làm sạch Fingerprints (Nếu file đã tồn tại)
+    if os.path.exists(FINGERPRINTS_CSV):
+        df_fp = pd.read_csv(FINGERPRINTS_CSV)
+        df_fp_clean = df_fp[df_fp['recording_id'].astype(str).isin(valid_rec_ids)].copy()
+        df_fp_clean.to_csv(FINGERPRINTS_CSV, index=False)
+        print(f"✅ Đã dọn dẹp fingerprints_master.csv: {len(df_fp_clean)} bản ghi.")
 
-    for idx, row in df_meta.iterrows():
-        rec_id = str(row.get("recording_id", uuid.uuid4()))
-        comp_id = str(row.get("composition_id", "")) if pd.notna(row.get("composition_id")) else None
-        audio_path = str(row.get("audio_path", ""))
-
-        # 1. Trích xuất Vân âm thanh Chromaprint
-        fp_str, duration = get_chromaprint(audio_path)
-        if fp_str:
-            fingerprints.append({
-                "fingerprint_id": str(uuid.uuid4()),
+    # 4. Làm sạch Rights (Chỉ giữ lại recording_id thuộc metadata hợp lệ)
+    if os.path.exists(RIGHTS_CSV):
+        df_rights = pd.read_csv(RIGHTS_CSV)
+        df_rights_clean = df_rights[df_rights['recording_id'].astype(str).isin(valid_rec_ids)].copy()
+    else:
+        # Tự sinh Rights nếu chưa có file
+        rights_records = []
+        for _, row in df_meta_clean.iterrows():
+            rec_id = str(row.get("recording_id"))
+            comp_id = str(row.get("composition_id"))
+            rights_records.append({
+                "rights_id": str(uuid.uuid4()),
                 "recording_id": rec_id,
-                "algorithm": "chromaprint",
-                "fingerprint": fp_str,
-                "duration": duration if duration > 0 else float(row.get("duration", 0.0)),
-                "created_at": datetime.now().isoformat()
+                "composition_id": comp_id,
+                "license_type": "CREATIVE_COMMONS" if "jamendo" in str(row.get("source_dataset", "")).lower() else "COMMERCIAL",
+                "copyright_status": "PROTECTED",
+                "attribution_required": True,
+                "commercial_use_allowed": True,
+                "modification_allowed": True,
+                "monetization_allowed": False,
+                "revenue_share_required": False,
+                "territory": "GLOBAL",
+                "platform": "ALL",
+                "valid_from": "2020-01-01",
+                "valid_until": "2030-12-31",
+                "source": str(row.get("source_dataset", "SYSTEM")),
+                "source_url": "https://jamendo.com",
+                "verified_at": datetime.now().isoformat()
             })
+        df_rights_clean = pd.DataFrame(rights_records)
 
-        # 2. Tạo bản ghi Embedding tương ứng với đúng recording_id
-        embeddings.append({
-            "embedding_id": str(uuid.uuid4()),
-            "recording_id": rec_id,
-            "segment_start": 0.0,
-            "segment_end": 15.0,
-            "model": "MERT",
-            "model_version": "MERT-v1-95M",
-            "dimension": 768,
-            "vector": ",".join(["0.0"] * 768),
-            "created_at": datetime.now().isoformat()
-        })
+    # Ghi lại metadata và rights đã đồng bộ
+    df_meta_clean.to_csv(METADATA_CSV, index=False)
+    df_rights_clean.to_csv(RIGHTS_CSV, index=False)
+    print(f"✅ Đã lưu metadata_master.csv và rights_master.csv đồng bộ 100%.")
 
-        # 3. Đồng bộ Rights Metadata
-        rights.append({
-            "rights_id": str(uuid.uuid4()),
-            "recording_id": rec_id,
-            "composition_id": comp_id,
-            "license_type": "CREATIVE_COMMONS" if "jamendo" in str(row.get("source_dataset", "")).lower() else "COMMERCIAL",
-            "copyright_status": "PROTECTED",
-            "attribution_required": True,
-            "commercial_use_allowed": True,
-            "modification_allowed": True,
-            "monetization_allowed": False,
-            "revenue_share_required": False,
-            "territory": "GLOBAL",
-            "platform": "ALL",
-            "valid_from": "2020-01-01",
-            "valid_until": "2030-12-31",
-            "source": str(row.get("source_dataset", "SYSTEM")),
-            "source_url": "https://jamendo.com",
-            "verified_at": datetime.now().isoformat()
-        })
+    # 5. Xử lý an toàn cho Embeddings (KHÔNG ĐỀ LÊN VECTOR THẬT)
+    if os.path.exists(EMBEDDINGS_CSV):
+        df_emb = pd.read_csv(EMBEDDINGS_CSV)
+        df_emb_clean = df_emb[df_emb['recording_id'].astype(str).isin(valid_rec_ids)].copy()
+        df_emb_clean.to_csv(EMBEDDINGS_CSV, index=False)
+        print(f"✅ Đã đồng bộ ID cho embeddings_master.csv: {len(df_emb_clean)} bản ghi (Giữ nguyên vector).")
+    else:
+        print("⚠️ Chưa có embeddings_master.csv. Bỏ qua khởi tạo dummy vector.")
 
-    # Lưu lại toàn bộ các file master đã đồng bộ ID
-    pd.DataFrame(fingerprints).to_csv(FINGERPRINTS_CSV, index=False)
-    print(f"✅ Đã ghi {len(fingerprints)} fingerprints thật vào {FINGERPRINTS_CSV}")
-
-    pd.DataFrame(embeddings).to_csv(EMBEDDINGS_CSV, index=False)
-    print(f"✅ Đã đồng bộ {len(embeddings)} embeddings vào {EMBEDDINGS_CSV}")
-
-    pd.DataFrame(rights).to_csv(RIGHTS_CSV, index=False)
-    print(f"✅ Đã đồng bộ {len(rights)} bản ghi quyền vào {RIGHTS_CSV}")
+    print("\n🎉 BỘ DỮ LIỆU CỐT LÕI ĐÃ ĐƯỢC ĐỒNG BỘ HOÀN HẢO!")
 
 if __name__ == "__main__":
     sync_all_master_data()
