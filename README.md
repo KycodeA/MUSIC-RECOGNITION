@@ -34,6 +34,7 @@
 │       ├── compositions_master.csv
 │       ├── embeddings_master.csv
 │       ├── fingerprints_master.csv
+│       ├── mert_faiss.index
 │       ├── metadata_master.csv
 │       ├── rights_master.csv
 │       └── test_queries_master.csv
@@ -42,7 +43,6 @@
 ├── requirements.txt
 ├── scripts
 │   ├── add_test_track.py
-│   ├── build_full_mert_index.py
 │   ├── evaluate_benchmark.py
 │   ├── generate_missing_csvs.py
 │   ├── generate_test_queries.py
